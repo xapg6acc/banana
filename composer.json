@@ -1,0 +1,21 @@
+{
+  "name": "lebran/banana",
+  "description": "Simple database component",
+  "homepage": "https://vk.com/id126790791",
+  "license": "MIT",
+  "support": {
+    "issues": "https://github.com/lebran/banana/issues",
+    "source": "https://github.com/lebran/banana"
+  },
+  "authors": [
+    {
+      "email": "itoktor@gmail.com",
+      "name": "Roman Kritskiy",
+      "role": "Lead"
+    }
+  ],
+  "autoload": {
+    "psr-4": { "Lebran\\Banana\\": "src/" }
+  },
+  "type": "library"
+}
