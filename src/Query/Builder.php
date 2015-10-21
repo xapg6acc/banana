@@ -121,7 +121,8 @@ class Builder
 
     public function orderBy($field)
     {
-        // TODO order
+        $this->orders = func_get_args();
+        return $this;
     }
 
     public function limit($limit = 1)
@@ -136,14 +137,19 @@ class Builder
         return $this;
     }
 
-    public function union()
+    public function union($union, $type = null)
     {
-        //TODO union
+        if($union instanceof \Closure) {
+            $union = $this->subQuery($union);
+        }
+        $this->unions[] = compact('union', 'type');
+        return $this;
     }
 
     public function get()
     {
         $sql = $this->grammar->buildSelect($this->getSelectParts());
+        var_dump($sql);
         return $this->db->query($sql);
     }
 
