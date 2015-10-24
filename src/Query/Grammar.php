@@ -17,20 +17,62 @@ class Grammar
         'unions'
     ];
 
-    //protected static $operators = ['=', '!=', '>', '<', 'IN'];
+    protected static $insert = [
+        'table',
+        'values'
+    ];
+
+    protected static $operators = [
+        '=',
+        '<>',
+        '!=',
+        '>',
+        '<',
+        '>=',
+        '<=',
+        'IN',
+        'NOT IN',
+        'BETWEEN',
+        'LIKE',
+        'NOT LIKE',
+        'IS NULL',
+        'NOT NULL',
+        'ANY',
+        'ALL',
+        'EXISTS',
+        'NOT EXISTS',
+        'SOME'
+    ];
 
     public function buildSelect(array $parts)
     {
-        foreach (static::$select as $part) {
+        return 'SELECT '.$this->buildParts(self::$select, $parts);
+    }
+
+    public function buildInsert(array $parts)
+    {
+        $parts['table'] = array_shift($parts['tables']);
+        return 'INSERT INTO '.$this->buildParts(self::$insert, $parts);
+    }
+
+    protected function buildParts($map, array $parts)
+    {
+        array_walk_recursive(
+            $parts,
+            function (&$item) {
+                if (is_string($item)) {
+                    $item = trim($item);
+                }
+            }
+        );
+
+        foreach ($map as $part) {
             if (!empty($parts[$part])) {
                 $builtParts[] = $this->{'build'.ucfirst($part)}($parts[$part]);
             }
         }
-        return 'SELECT '.implode(' ', $builtParts);
-    }
 
-    public function buildInsert()
-    {
+        return implode(' ', $builtParts);
     }
 
     protected function buildDistinct($distinct)
@@ -38,7 +80,7 @@ class Grammar
         return $distinct?'DISTINCT':'';
     }
 
-    protected function buildFields($fields)
+    protected function buildFields(array $fields)
     {
         $fields = array_map([$this, 'buildField'], $fields);
         return implode(',', $fields);
@@ -56,10 +98,12 @@ class Grammar
             case 'object':
                 return $this->buildSelect($field->getSelectParts());
                 break;
+            default:
+                throw new \InvalidArgumentException('Field only: string, array or object.');
         }
     }
 
-    protected function buildTables($tables)
+    protected function buildTables(array $tables)
     {
         $tables = array_map([$this, 'buildTable'], $tables);
         return 'FROM '.implode(',', $tables);
@@ -77,10 +121,12 @@ class Grammar
             case 'object':
                 return '('.$this->buildSelect($table->getSelectParts()).')';
                 break;
+            default:
+                throw new \InvalidArgumentException('Table only: string, array or object.');
         }
     }
 
-    protected function buildJoins($joins)
+    protected function buildJoins(array $joins)
     {
         $joins = array_map([$this, 'buildJoin'], $joins);
         return implode(',', $joins);
@@ -105,12 +151,12 @@ class Grammar
         return $query;
     }
 
-    protected function buildWheres($wheres)
+    protected function buildWheres(array $wheres)
     {
         return 'WHERE '.$this->buildWheresNested($wheres);
     }
 
-    protected function buildWheresNested($wheres)
+    protected function buildWheresNested(array $wheres)
     {
         $wheres[0]['boolean'] = null;
         return implode(' ', array_map([$this, 'buildWhere'], $wheres));
@@ -119,17 +165,26 @@ class Grammar
     protected function buildWhere($where)
     {
         $query = '';
-        if ($where['boolean'] && in_array(strtoupper($where['boolean']), ['OR', 'AND'])) {
-            $query .= $where['boolean'].' ';
+        if (is_string($where['boolean'])) {
+            $where['boolean'] = strtoupper($where['boolean']);
+            if (in_array($where['boolean'], ['OR', 'AND'], true)) {
+                $query .= $where['boolean'].' ';
+            }
         }
 
         if (is_string($where['field'])) {
-            $query .= $this->quoteField($where['field']).' ';
-            //if (is_string($where['operator']) && in_array($where['operator'], self::$operators)) {
-            $query .= $where['operator'].' ';
-            //} else {
-            // TODO operators
-            //}
+            $query .= $this->buildAggregate($where['field']).' ';
+
+            if (is_string($where['operator'])) {
+                $where['operator'] = strtoupper($where['operator']);
+                if (in_array($where['operator'], self::$operators, true)) {
+                    $query .= $where['operator'].' ';
+                } else {
+                    throw new \InvalidArgumentException('Supports only '.explode(',', self::$operators).'.');
+                }
+            } else {
+                throw new \InvalidArgumentException('Operator should be string.');
+            }
 
             switch (gettype($where['data'])) {
                 case 'string':
@@ -138,7 +193,6 @@ class Grammar
                     $query .= $this->quote($where['data']);
                     break;
                 case 'null':
-                    $query .= 'NULL';
                     break;
                 case 'array':
                     if (strtoupper($where['operator']) === 'BETWEEN') {
@@ -156,9 +210,8 @@ class Grammar
         } else if (is_object($where['field'])) {
             $query .= '('.$this->buildWheresNested($where['field']->getSelectParts()['wheres']).')';
         } else {
-            throw new \InvalidArgumentException();
+            throw new \InvalidArgumentException('Where field support only string or object.');
         }
-        // TODO check another types
 
         return $query;
     }
@@ -189,13 +242,18 @@ class Grammar
         }
     }
 
-    protected function buildGroups($groups)
+    protected function buildGroups(array $groups)
     {
         $groups = array_map([$this, 'buildField'], $groups);
         return 'GROUP BY '.implode(',', $groups);
     }
 
-    protected function buildOrders($orders)
+    protected function buildHavings(array $havings)
+    {
+        return 'HAVING '.$this->buildWheresNested($havings);
+    }
+
+    protected function buildOrders(array $orders)
     {
         $orders = array_map([$this, 'buildOrder'], $orders);
         return 'ORDER BY '.implode(',', $orders);
@@ -208,16 +266,16 @@ class Grammar
                 return $this->quoteField($order);
                 break;
             case 'array':
-                $conds = [];
-                foreach ($order as $key => $value) {
-                    $conds[] = $this->quoteField($value);
-                    if ($value === 'DESC') {
-                        unset($conds[$key]);
-                        $conds[$key - 1] .= ' DESC';
-                    }
+                $condition = '';
+                if (is_string($order[1])) {
+                    $order[1] = strtoupper($order[1]);
+                    if (in_array($order[1], ['ASC', 'DESC'])) {
+                        $condition = ' '.$order[1];
+                    };
                 }
-                return implode(',', $conds);
-                break;
+                return $this->quoteField($order[0]).$condition;
+            default:
+                throw new \InvalidArgumentException('OrderBy should be string or array.');
         }
     }
 
@@ -231,7 +289,7 @@ class Grammar
         return 'OFFSET '.$offset;
     }
 
-    protected function buildUnions($unions)
+    protected function buildUnions(array $unions)
     {
         return implode(' ', array_map([$this, 'buildUnion'], $unions));
     }
@@ -245,27 +303,61 @@ class Grammar
             }
             return $string.$this->buildSelect($union['union']->getSelectParts());
         } else {
-            throw new \InvalidArgumentException();
+            throw new \InvalidArgumentException('Union should be object.');
+        }
+    }
+
+    protected function buildValues($values)
+    {
+        switch(gettype($values)){
+            case 'array':
+                if (is_array(reset($values))) {
+                    array_walk($values, function(&$item){
+                        ksort($item);
+                    });
+                } else {
+                    $values = [$values];
+                }
+                $query = '('.$this->buildFields(array_keys(reset($values))).')';
+                foreach ($values as $value) {
+                    $parameters[] = '('.implode(',', array_map([$this, 'quote'], $value)).')';
+                }
+                return $query.' VALUES '.implode(',', $parameters);
+                break;
+            case 'object':
+                $query = '';
+                $fields = $values->getSelectParts()['fields'];
+                if(reset($fields) !== '*'){
+                    $query = '('.$this->buildFields($fields).') ';
+                }
+                return $query.$this->buildSelect($values->getSelectParts());
+                break;
+            default:
+                throw new \InvalidArgumentException('Values should be array or object.');
         }
     }
 
     protected function buildAlias($string, $alias)
     {
-        return $string.' as '.$alias;
+        return $this->quoteTable($string).' as '.$this->quoteTable($alias);
     }
 
     protected function quote($string)
     {
-        return "'".$string."'";
+        return is_int($string)?$string:"'".$string."'";
     }
 
     protected function quoteField($string)
     {
-        return ($string === '*')?$string:"`".$string."`";
+        if (0 !== strpos($string, '.')) {
+            return implode('.', array_map([$this, 'quoteField'], explode('.', $string)));
+        } else {
+            return ($string === '*')?$string:$this->quote($string);
+        }
     }
 
     protected function quoteTable($string)
     {
-        return "`".$string."`";
+        return $this->quote($string);
     }
 }

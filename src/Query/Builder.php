@@ -1,10 +1,18 @@
 <?php
 namespace Lebran\Banana\Query;
 
+use PDO;
+
 class Builder
 {
+    /**
+     * @var PDO
+     */
     protected $db;
 
+    /**
+     * @var Grammar
+     */
     protected $grammar;
 
     protected $distinct = false;
@@ -52,8 +60,7 @@ class Builder
         $this->fields = [];
         foreach (func_get_args() as $field) {
             if ($field instanceof \Closure) {
-                $field = new static($this->db, $this->grammar);
-                call_user_func(($field->bindTo($field, $this)));
+                $field = $this->subQuery($field);
             }
             $this->fields[] = $field;
         }
@@ -114,9 +121,25 @@ class Builder
         return $this;
     }
 
-    public function having()
+    /**
+     * @param        $field
+     * @param null   $operator
+     * @param mixed  $data
+     * @param string $boolean
+     *
+     * @return $this
+     */
+    public function having($field, $operator = null, $data = null, $boolean = 'AND')
     {
-        // TODO having
+        if ($field instanceof \Closure) {
+            $field = $this->subQuery($field);
+        }
+
+        if ($data instanceof \Closure) {
+            $data = $this->subQuery($data);
+        }
+        $this->havings[] = compact('field', 'operator', 'data', 'boolean');
+        return $this;
     }
 
     public function orderBy($field)
@@ -139,7 +162,7 @@ class Builder
 
     public function union($union, $type = null)
     {
-        if($union instanceof \Closure) {
+        if ($union instanceof \Closure) {
             $union = $this->subQuery($union);
         }
         $this->unions[] = compact('union', 'type');
@@ -149,68 +172,21 @@ class Builder
     public function get()
     {
         $sql = $this->grammar->buildSelect($this->getSelectParts());
-        var_dump($sql);
         return $this->db->query($sql);
     }
 
-
-    public function insert(array $values)
+    public function insert($values)
     {
-        //        var_dump($this->buildInsert($values));
-        return $this->db->query($this->buildInsert($values));
+        if($values instanceof \Closure){
+            $values = $this->subQuery($values);
+        }
+
+        $sql = $this->grammar->buildInsert(['tables' => $this->tables, 'values' => $values]);
+        return $this->db->query($sql);
     }
 
-    protected function buildInsert($values)
-    {
-        $query = 'INSERT INTO ';
+    public function update(array $values){
 
-        // from table
-
-        foreach ($this->tables as $table) {
-            $tables[] = $this->compile($table);
-        }
-        $query .= array_shift($tables);
-        $query .= '('.implode(',', array_keys($values)).')';
-
-        $values_new = array_map(
-            function ($value) {
-                return "'".$value."'";
-            },
-            array_values($values)
-        );
-        $query .= ' VALUES('.implode(',', array_values($values_new)).')';
-
-        return $query;
-    }
-
-    public function update(array $values)
-    {
-        //                var_dump($this->buildUpdate($values));
-        return $this->db->query($this->buildUpdate($values));
-    }
-
-    protected function buildUpdate(array $values)
-    {
-        //        UPDATE `users` SET `user_id`=[value-1],`login`=[value-2],`password`=[value-3] WHERE 1
-        $query = 'UPDATE ';
-
-        foreach ($this->tables as $table) {
-            $tables[] = $this->compile($table);
-        }
-        $query .= array_shift($tables);
-        $query .= ' SET ';
-
-        foreach ($values as $key => $value) {
-            $values_new[] = $key." = '".$value."'";
-        }
-        $query .= implode(',', $values_new);
-
-        // where
-        if ($this->where) {
-            $query .= ' WHERE '.$this->buildWhereClause();
-        }
-
-        return $query;
     }
 
     protected function subQuery(\Closure $closure)
