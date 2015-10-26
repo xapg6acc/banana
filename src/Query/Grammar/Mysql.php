@@ -5,6 +5,19 @@ use \Lebran\Banana\Query\Grammar;
 
 class Mysql extends Grammar
 {
+    protected static $select = [
+        'distinct',
+        'fields',
+        'tables',
+        'joins',
+        'wheres',
+        'groups',
+        'havings',
+        'orders',
+        'limit',
+        'offset',
+    ];
+
     protected static $delete = [
         'fields',
         'tables',
@@ -21,6 +34,33 @@ class Mysql extends Grammar
         'limit'
     ];
 
+    public function buildSelect(array $parts)
+    {
+        $query = parent::buildSelect($parts);
+        if (!empty($parts['unions'])) {
+            $query = '('.$query.') '.$this->buildUnions($parts['unions']);
+        }
+        return $query;
+    }
+
+    public function buildUpdate(array $parts)
+    {
+        $query = 'UPDATE '.implode(',', array_map([$this, 'buildTable'], $parts['tables']));
+        return $query.$this->buildParts(static::$update, $parts);
+    }
+
+    protected function buildUnion($union){
+        if (is_object($union['union'])) {
+            $string = 'UNION ';
+            if ($union['type'] === 'ALL') {
+                $string .= 'ALL ';
+            }
+            return $string.'('.$this->buildSelect($union['union']->getParts()).')';
+        } else {
+            throw new \InvalidArgumentException('Union should be object.');
+        }
+    }
+
     protected function quoteField($string)
     {
         if(false !== strpos($string, '.')){
@@ -33,12 +73,6 @@ class Mysql extends Grammar
     protected function quoteTable($string)
     {
         return '`'.$string.'`';
-    }
-
-    public function buildUpdate(array $parts)
-    {
-        $query = 'UPDATE '.implode(',', array_map([$this, 'buildTable'], $parts['tables']));
-        return $query.$this->buildParts(static::$update, $parts);
     }
 
     protected function buildSets($values)
