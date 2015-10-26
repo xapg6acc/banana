@@ -171,13 +171,13 @@ class Builder
 
     public function get()
     {
-        $sql = $this->grammar->buildSelect($this->getSelectParts());
+        $sql = $this->grammar->buildSelect($this->getParts());
         return $this->db->query($sql);
     }
 
     public function insert($values)
     {
-        if($values instanceof \Closure){
+        if ($values instanceof \Closure) {
             $values = $this->subQuery($values);
         }
 
@@ -185,8 +185,19 @@ class Builder
         return $this->db->query($sql);
     }
 
-    public function update(array $values){
+    public function delete()
+    {
+        if (in_array('*', $this->fields, true)) {
+            $this->fields = null;
+        }
+        $sql = $this->grammar->buildDelete($this->getParts());
+        return $this->db->query($sql);
+    }
 
+    public function truncate($table)
+    {
+        $sql = $this->grammar->buildTruncate(['table' => $table]);
+        return $this->db->query($sql);
     }
 
     protected function subQuery(\Closure $closure)
@@ -196,9 +207,9 @@ class Builder
         return $object;
     }
 
-    public function getSelectParts()
+    public function getParts()
     {
-        return [
+        $parts = [
             'distinct' => $this->distinct,
             'fields'   => $this->fields,
             'tables'   => $this->tables,
@@ -211,5 +222,15 @@ class Builder
             'offset'   => $this->offset,
             'unions'   => $this->unions
         ];
+
+        array_walk_recursive(
+            $parts,
+            function (&$item) {
+                if (is_string($item)) {
+                    $item = trim($item);
+                }
+            }
+        );
+        return $parts;
     }
 }

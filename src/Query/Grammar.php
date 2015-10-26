@@ -22,6 +22,12 @@ class Grammar
         'values'
     ];
 
+    protected static $delete = [
+        'fields',
+        'tables',
+        'wheres'
+    ];
+
     protected static $operators = [
         '=',
         '<>',
@@ -46,32 +52,33 @@ class Grammar
 
     public function buildSelect(array $parts)
     {
-        return 'SELECT '.$this->buildParts(self::$select, $parts);
+        return 'SELECT '.$this->buildParts(static::$select, $parts);
     }
 
     public function buildInsert(array $parts)
     {
         $parts['table'] = array_shift($parts['tables']);
-        return 'INSERT INTO '.$this->buildParts(self::$insert, $parts);
+        return 'INSERT INTO '.$this->buildParts(static::$insert, $parts);
+    }
+
+    public function buildDelete(array $parts)
+    {
+        return 'DELETE '.$this->buildParts(static::$delete, $parts);
+    }
+
+    public function buildTruncate(array $parts)
+    {
+        return 'TRUNCATE TABLE '.$this->buildParts(['table'], $parts);
     }
 
     protected function buildParts($map, array $parts)
     {
-        array_walk_recursive(
-            $parts,
-            function (&$item) {
-                if (is_string($item)) {
-                    $item = trim($item);
-                }
-            }
-        );
-
+        $builtParts = [];
         foreach ($map as $part) {
             if (!empty($parts[$part])) {
                 $builtParts[] = $this->{'build'.ucfirst($part)}($parts[$part]);
             }
         }
-
         return implode(' ', $builtParts);
     }
 
@@ -96,7 +103,7 @@ class Grammar
                 return $this->buildAlias($this->buildField($field[0]), $this->quote($field[1]));
                 break;
             case 'object':
-                return $this->buildSelect($field->getSelectParts());
+                return $this->buildSelect($field->getParts());
                 break;
             default:
                 throw new \InvalidArgumentException('Field only: string, array or object.');
@@ -119,7 +126,7 @@ class Grammar
                 return $this->buildAlias($this->buildTable($table[0]), $this->quote($table[1]));
                 break;
             case 'object':
-                return '('.$this->buildSelect($table->getSelectParts()).')';
+                return '('.$this->buildSelect($table->getParts()).')';
                 break;
             default:
                 throw new \InvalidArgumentException('Table only: string, array or object.');
@@ -177,10 +184,10 @@ class Grammar
 
             if (is_string($where['operator'])) {
                 $where['operator'] = strtoupper($where['operator']);
-                if (in_array($where['operator'], self::$operators, true)) {
+                if (in_array($where['operator'], static::$operators, true)) {
                     $query .= $where['operator'].' ';
                 } else {
-                    throw new \InvalidArgumentException('Supports only '.explode(',', self::$operators).'.');
+                    throw new \InvalidArgumentException('Supports only '.explode(',', static::$operators).'.');
                 }
             } else {
                 throw new \InvalidArgumentException('Operator should be string.');
@@ -202,13 +209,13 @@ class Grammar
                     }
                     break;
                 case 'object':
-                    $query .= '('.$this->buildSelect($where['data']->getSelectParts()).')';
+                    $query .= '('.$this->buildSelect($where['data']->getParts()).')';
                     break;
                 default:
                     throw new \InvalidArgumentException();
             }
         } else if (is_object($where['field'])) {
-            $query .= '('.$this->buildWheresNested($where['field']->getSelectParts()['wheres']).')';
+            $query .= '('.$this->buildWheresNested($where['field']->getParts()['wheres']).')';
         } else {
             throw new \InvalidArgumentException('Where field support only string or object.');
         }
@@ -269,9 +276,9 @@ class Grammar
                 $condition = '';
                 if (is_string($order[1])) {
                     $order[1] = strtoupper($order[1]);
-                    if (in_array($order[1], ['ASC', 'DESC'])) {
+                    if (in_array($order[1], ['ASC', 'DESC'], true)) {
                         $condition = ' '.$order[1];
-                    };
+                    }
                 }
                 return $this->quoteField($order[0]).$condition;
             default:
@@ -301,7 +308,7 @@ class Grammar
             if ($union['type'] === 'ALL') {
                 $string .= 'ALL ';
             }
-            return $string.$this->buildSelect($union['union']->getSelectParts());
+            return $string.$this->buildSelect($union['union']->getParts());
         } else {
             throw new \InvalidArgumentException('Union should be object.');
         }
@@ -309,28 +316,32 @@ class Grammar
 
     protected function buildValues($values)
     {
-        switch(gettype($values)){
+        switch (gettype($values)) {
             case 'array':
                 if (is_array(reset($values))) {
-                    array_walk($values, function(&$item){
-                        ksort($item);
-                    });
+                    array_walk(
+                        $values,
+                        function (&$item) {
+                            ksort($item);
+                        }
+                    );
                 } else {
                     $values = [$values];
                 }
-                $query = '('.$this->buildFields(array_keys(reset($values))).')';
+                $parameters = [];
+                $query      = '('.$this->buildFields(array_keys(reset($values))).')';
                 foreach ($values as $value) {
                     $parameters[] = '('.implode(',', array_map([$this, 'quote'], $value)).')';
                 }
                 return $query.' VALUES '.implode(',', $parameters);
                 break;
             case 'object':
-                $query = '';
-                $fields = $values->getSelectParts()['fields'];
-                if(reset($fields) !== '*'){
+                $query  = '';
+                $fields = $values->getParts()['fields'];
+                if (reset($fields) !== '*') {
                     $query = '('.$this->buildFields($fields).') ';
                 }
-                return $query.$this->buildSelect($values->getSelectParts());
+                return $query.$this->buildSelect($values->getParts());
                 break;
             default:
                 throw new \InvalidArgumentException('Values should be array or object.');
