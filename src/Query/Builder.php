@@ -199,6 +199,14 @@ class Builder
         $sql = $this->grammar->buildTruncate(['table' => $table]);
         return $this->db->query($sql);
     }
+    public function update(array $values)
+    {
+        $values = array_map(function($value){
+            return ($value instanceof \Closure)?$this->subQuery($value):$value;
+        }, $values);
+        $sql = $this->grammar->buildUpdate(array_merge($this->getParts(), ['sets' => $values]));
+        return $this->db->query($sql);
+    }
 
     protected function subQuery(\Closure $closure)
     {

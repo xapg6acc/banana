@@ -28,6 +28,12 @@ class Grammar
         'wheres'
     ];
 
+    protected static $update = [
+        'table',
+        'sets',
+        'wheres'
+    ];
+
     protected static $operators = [
         '=',
         '<>',
@@ -59,6 +65,12 @@ class Grammar
     {
         $parts['table'] = array_shift($parts['tables']);
         return 'INSERT INTO '.$this->buildParts(static::$insert, $parts);
+    }
+
+    public function buildUpdate(array $parts)
+    {
+        $parts['table'] = array_shift($parts['tables']);
+        return 'UPDATE '.$this->buildParts(static::$update, $parts);
     }
 
     public function buildDelete(array $parts)
@@ -237,12 +249,12 @@ class Grammar
                 if ($match[2]) {
                     $args = explode(',', $args);
                     foreach ($args as $key => $value) {
-                        $args[$key] = "'".$value."'";
+                        $args[$key] = (count($args) === 0)?"`".$value."`":null;
                     }
-                    $args = ','.implode(',', $args);
+                    $args = (null === $args[0])?'':','.implode(',', $args);
                 }
                 $new_function = $this->buildAggregate($function);
-                return $match[1]."(".$new_function.$args.")";
+                return strtoupper($match[1])."(".$new_function.$args.")";
             }
         } else {
             return $this->quoteField($string);
@@ -345,6 +357,35 @@ class Grammar
                 break;
             default:
                 throw new \InvalidArgumentException('Values should be array or object.');
+        }
+    }
+
+    protected function buildSets($values)
+    {
+        $sets = [];
+        foreach ($values as $key => $value){
+            $sets[] = $this->buildSet($key, $value);
+        }
+        return 'SET '.implode(', ', $sets);
+    }
+
+    protected function buildSet($key, $value)
+    {
+        if(strripos($key, ',') !== false){
+            $query = '('.implode(',',array_map([$this, 'quoteField'], explode(',', $key))).')';
+        }else{
+            $query = $this->quoteField($key);
+        }
+        $query .= ' = ';
+        switch (gettype($value)) {
+            case 'string':
+                return $query.$this->quote($value);
+                break;
+            case 'object':
+                return $query.'('.$this->buildSelect($value->getParts()).')';
+                break;
+            default:
+                throw new \InvalidArgumentException('Value only: string or object.');
         }
     }
 
