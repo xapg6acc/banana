@@ -1,7 +1,8 @@
 <?php
 namespace Lebran\Banana\Orm;
 
-use Lebran\Banana\Query\Builder;
+use Lebran\Di\InjectableTrait;
+use Lebran\Di\InjectableInterface;
 
 /**
  * ORM allows you to access database items and their relationships in an OOP manner,
@@ -22,37 +23,42 @@ use Lebran\Banana\Query\Builder;
  * @see     Query_Database::where()
  * @package ORM
  */
-class Model
+class Model implements InjectableInterface
 {
+    use InjectableTrait;
+
     /**
      * Specifies which column is treated as PRIMARY KEY
      *
      * @var string
      */
-    public $id_field = 'id';
+    protected $id = 'id';
 
-    public $table;
+    protected $table;
 
-    protected $_row;
+    protected $row;
+
     /**
-     * Associated query builder
-     *
-     * @var \PHPixie\DB\Query
+     * @var
      */
-    public $query;
+    protected $query;
 
-    public function __construct()
+    protected $loaded;
+
+    final public function __construct($di)
     {
-        $pdo         = new \PDO('mysql:dbname=chatik;host=127.0.0.1', 'root', '');
-        $this->query = new Builder($pdo);
-        //$this->model_name = strtolower(get_class($this));
-        //$this->model_name = str_ireplace($this->pixie->app_namespace."Model\\", '', $this->model_name);
+        //var_dump($di);
+        $this->di = $di;
+        if (method_exists($this, 'initialize')) {
+            $this->initialize();
+        }
+
+        $this->query = $this->di->get('db.qb')->table($this->table);
 
         if ($this->table === null) {
             //            $this->table = str_replace("\\", '_', $this->model_name);
             //            $this->table = $this->plural($this->table);
         }
-        $this->query->table($this->table);
         /*foreach (array('belongs_to', 'has_one', 'has_many') as $rels)
         {
             $normalized = array();
@@ -101,7 +107,7 @@ class Model
      */
     public function __call($method, $arguments)
     {
-        if (!in_array($method, array('limit', 'offset', 'orderBy', 'where'))) {
+        if (!in_array($method, ['limit', 'offset', 'orderBy', 'where'])) {
             throw new \Exception("Method '{$method}' doesn't exist on .".get_class($this));
         }
         call_user_func_array(array($this->query, $method), $arguments);
@@ -116,8 +122,13 @@ class Model
     public function findAll()
     {
         //$paths = $this->prepare_relations();
-        //return $this->pixie->orm->result($this->model_name, $this->query->execute(), $paths);
-        return $this->query->get()->fetchAll(\PDO::FETCH_CLASS, static::class);
+        $objects = $this->query->get()->fetchAll(\PDO::FETCH_CLASS, static::class, [$this->di]);
+        return array_map(
+            function ($item) {
+                return $item->loaded(true);
+            },
+            $objects
+        );
     }
 
     /**
@@ -128,8 +139,7 @@ class Model
      */
     public function find()
     {
-        $this->query->limit(1);
-        return $this->findAll();
+        return $this->query->get()->fetchObject(static::class, [$this->di])->loaded(true);
     }
 
     /**
@@ -137,9 +147,14 @@ class Model
      *
      * @return boolean Returns True if the item was loaded
      */
-    public function loaded()
+    public function loaded($loaded = null)
     {
-        return $this->loaded;
+        if (null === $loaded) {
+            return $this->loaded;
+        } else {
+            $this->loaded = $loaded;
+            return $this;
+        }
     }
 
     /**
@@ -155,76 +170,77 @@ class Model
      */
     public function __get($column)
     {
-                if (array_key_exists($column, $this->_row))
-                    return $this->_row[$column];
+        if (array_key_exists($column, $this->row)) {
+            return $this->row[$column];
+        }
 
         //        if (array_key_exists($column, $this->cached))
         //            return $this->cached[$column];
 
-//        if (($val = $this->get($column)) !== null) {
-            //            $this->cached[$column] = $val;
-            //            return $val;
-//        }
+        //        if (($val = $this->get($column)) !== null) {
+        //            $this->cached[$column] = $val;
+        //            return $val;
+        //        }
 
         //$relations = array_merge($this->has_one, $this->has_many, $this->belongs_to);
-//        if ($target = $this->pixie->arr($relations, $column, false)) {
-//            $model        = $this->pixie->orm->get($target['model']);
-//            $model->query = clone $this->query;
-//            if ($this->loaded()) {
-//                $model->query->where($this->id_field, $this->_row[$this->id_field]);
-//            }
-//            if ($target['type'] == 'has_many' && isset($target['through'])) {
-//                $last_alias    = $model->query->last_alias();
-//                $through_alias = $model->query->add_alias();
-//                $new_alias     = $model->query->add_alias();
-//                $model->query->join(
-//                    array($target['through'], $through_alias),
-//                    array(
-//                        $last_alias.'.'.$this->id_field,
-//                        $through_alias.'.'.$target['key'],
-//                    ),
-//                    'inner'
-//                );
-//                $model->query->join(
-//                    array($model->table, $new_alias),
-//                    array(
-//                        $through_alias.'.'.$target['foreign_key'],
-//                        $new_alias.'.'.$model->id_field,
-//                    ),
-//                    'inner'
-//                );
-//            } else {
-//                $last_alias = $model->query->last_alias();
-//                $new_alias  = $model->query->add_alias();
-//                if ($target['type'] == 'belongs_to') {
-//                    $model->query->join(
-//                        array($model->table, $new_alias),
-//                        array(
-//                            $last_alias.'.'.$target['key'],
-//                            $new_alias.'.'.$model->id_field,
-//                        ),
-//                        'inner'
-//                    );
-//                } else {
-//                    $model->query->join(
-//                        array($model->table, $new_alias),
-//                        array(
-//                            $last_alias.'.'.$this->id_field,
-//                            $new_alias.'.'.$target['key'],
-//                        ),
-//                        'inner'
-//                    );
-//                }
-//            }
-//            $model->query->fields("$new_alias.*");
-//            if ($target['type'] != 'has_many' && $this->loaded()) {
-//                $model                 = $model->find();
-//                $this->cached[$column] = $model;
-//            }
-//            return $model;
-//        }
+        //        if ($target = $this->pixie->arr($relations, $column, false)) {
+        //            $model        = $this->pixie->orm->get($target['model']);
+        //            $model->query = clone $this->query;
+        //            if ($this->loaded()) {
+        //                $model->query->where($this->id_field, $this->_row[$this->id_field]);
+        //            }
+        //            if ($target['type'] == 'has_many' && isset($target['through'])) {
+        //                $last_alias    = $model->query->last_alias();
+        //                $through_alias = $model->query->add_alias();
+        //                $new_alias     = $model->query->add_alias();
+        //                $model->query->join(
+        //                    array($target['through'], $through_alias),
+        //                    array(
+        //                        $last_alias.'.'.$this->id_field,
+        //                        $through_alias.'.'.$target['key'],
+        //                    ),
+        //                    'inner'
+        //                );
+        //                $model->query->join(
+        //                    array($model->table, $new_alias),
+        //                    array(
+        //                        $through_alias.'.'.$target['foreign_key'],
+        //                        $new_alias.'.'.$model->id_field,
+        //                    ),
+        //                    'inner'
+        //                );
+        //            } else {
+        //                $last_alias = $model->query->last_alias();
+        //                $new_alias  = $model->query->add_alias();
+        //                if ($target['type'] == 'belongs_to') {
+        //                    $model->query->join(
+        //                        array($model->table, $new_alias),
+        //                        array(
+        //                            $last_alias.'.'.$target['key'],
+        //                            $new_alias.'.'.$model->id_field,
+        //                        ),
+        //                        'inner'
+        //                    );
+        //                } else {
+        //                    $model->query->join(
+        //                        array($model->table, $new_alias),
+        //                        array(
+        //                            $last_alias.'.'.$this->id_field,
+        //                            $new_alias.'.'.$target['key'],
+        //                        ),
+        //                        'inner'
+        //                    );
+        //                }
+        //            }
+        //            $model->query->fields("$new_alias.*");
+        //            if ($target['type'] != 'has_many' && $this->loaded()) {
+        //                $model                 = $model->find();
+        //                $this->cached[$column] = $model;
+        //            }
+        //            return $model;
+        //        }
 
-        throw new \Exception("Property {$column} not found on {$this->model_name} model.");
+        //        throw new \Exception("Property {$column} not found on {$this->model_name} model.");
     }
 
     /**
@@ -233,22 +249,23 @@ class Model
      * current item and the passed one  Using properties this way is a shortcut to the add() method.
      *
      * @param string $column Column or relationship name
-     * @param mixed $val    Column value or an ORM model to be added to a relation
+     * @param mixed  $value  Column value or an ORM model to be added to a relation
+     *
      * @return void
      * @see add()
      */
-    public function __set($column, $val)
+    public function __set($column, $value)
     {
         //$relations = array_merge($this->has_one, $this->has_many, $this->belongs_to);
-//        if (array_key_exists($column, $relations))
-//        {
-//            $this->add($column, $val);
-//        }
-//        else
-//        {
-            $this->_row[$column] = $val;
-//        }
-//        $this->cached = array();
+        //        if (array_key_exists($column, $relations))
+        //        {
+        //            $this->add($column, $val);
+        //        }
+        //        else
+        //        {
+        $this->row[$column] = $value;
+        //        }
+        //        $this->cached = array();
     }
 
     /**
@@ -259,35 +276,46 @@ class Model
      */
     public function save()
     {
-        if ($this->loaded())
-        {
-            $query =
-            $query = $this->conn->query('update')
-                                ->table($this->table)
-                                ->where($this->id_field, $this->_row[$this->id_field]);
+        $query = $this->di->get('db.qb')
+                          ->table($this->table);
+        if ($this->loaded()) {
+            $query->where($this->id, '=', $this->row[$this->id])
+                  ->update($this->row);
+        } else {
+            $query->insert($this->row);
+            $this->loaded = true;
         }
-        else
-        {
-            $query = $this->conn->query('insert')
-                                ->table($this->table);
-        }
-        $query->data($this->_row);
-        $query->execute();
 
-        if ($this->loaded())
-        {
-            $id = $this->_row[$this->id_field];
+        /*if ($this->loaded()) {
+            $id = $this->row[$this->id];
+        } else {
+            //$id = $this->conn->insert_id();
         }
-        else
-        {
-            $id = $this->conn->insert_id();
-        }
-        $row = (array) $this->conn->query('select')
-                                  ->table($this->table)
-                                  ->where($this->id_field, $id)->execute()->current();
-        $this->values($row, true);
+        $row = $this->di->get('qb')
+            ->table($this->table)
+            ->where($this->id, $id)
+            ->get()
+            ->fetch(\PDO::FETCH_ASSOC);
+        $this->values($row, true);*/
         return $this;
     }
 
-
+    /**
+     * Batch updates item columns using an associative array
+     *
+     * @param array   $row        Associative array of key => value pairs
+     * @param boolean $loaded     Flag to consider the ORM item loaded. Useful if you selected
+     *                            the row from the database and want to wrap it in ORM
+     *
+     * @return \PHPixie\ORM\Model Returns self
+     */
+    public function values($row, $loaded = false)
+    {
+        $this->row = array_merge($this->row, $row);
+        if ($loaded) {
+            $this->loaded = true;
+        }
+        //$this->cached = array();
+        return $this;
+    }
 }

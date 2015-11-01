@@ -2,6 +2,7 @@
 namespace Lebran\Banana\Query;
 
 use PDO;
+use Closure;
 
 class Builder
 {
@@ -37,7 +38,7 @@ class Builder
 
     protected $unions;
 
-    public function __construct($db, $grammar)
+    public function __construct(PDO $db, Grammar $grammar)
     {
         $this->grammar = $grammar;
         $this->db      = $db;
@@ -59,7 +60,7 @@ class Builder
     {
         $this->fields = [];
         foreach (func_get_args() as $field) {
-            if ($field instanceof \Closure) {
+            if ($field instanceof Closure) {
                 $field = $this->subQuery($field);
             }
             $this->fields[] = $field;
@@ -75,7 +76,7 @@ class Builder
     public function table()
     {
         foreach (func_get_args() as $table) {
-            if ($table instanceof \Closure) {
+            if ($table instanceof Closure) {
                 $table = $this->subQuery($table);
             }
             $this->tables[] = $table;
@@ -99,11 +100,11 @@ class Builder
      */
     public function where($field, $operator = null, $data = null, $boolean = 'AND')
     {
-        if ($field instanceof \Closure) {
+        if ($field instanceof Closure) {
             $field = $this->subQuery($field);
         }
 
-        if ($data instanceof \Closure) {
+        if ($data instanceof Closure) {
             $data = $this->subQuery($data);
         }
         $this->wheres[] = compact('field', 'operator', 'data', 'boolean');
@@ -131,11 +132,11 @@ class Builder
      */
     public function having($field, $operator = null, $data = null, $boolean = 'AND')
     {
-        if ($field instanceof \Closure) {
+        if ($field instanceof Closure) {
             $field = $this->subQuery($field);
         }
 
-        if ($data instanceof \Closure) {
+        if ($data instanceof Closure) {
             $data = $this->subQuery($data);
         }
         $this->havings[] = compact('field', 'operator', 'data', 'boolean');
@@ -162,7 +163,7 @@ class Builder
 
     public function union($union, $type = null)
     {
-        if ($union instanceof \Closure) {
+        if ($union instanceof Closure) {
             $union = $this->subQuery($union);
         }
         $this->unions[] = compact('union', 'type');
@@ -175,9 +176,13 @@ class Builder
         return $this->db->query($sql);
     }
 
+    public function select(){
+        return $this->get();
+    }
+
     public function insert($values)
     {
-        if ($values instanceof \Closure) {
+        if ($values instanceof Closure) {
             $values = $this->subQuery($values);
         }
 
@@ -202,13 +207,13 @@ class Builder
     public function update(array $values)
     {
         $values = array_map(function($value){
-            return ($value instanceof \Closure)?$this->subQuery($value):$value;
+            return ($value instanceof Closure)?$this->subQuery($value):$value;
         }, $values);
         $sql = $this->grammar->buildUpdate(array_merge($this->getParts(), ['sets' => $values]));
         return $this->db->query($sql);
     }
 
-    protected function subQuery(\Closure $closure)
+    protected function subQuery(Closure $closure)
     {
         $object = new static($this->db, $this->grammar);
         call_user_func(($closure->bindTo($object, $this)));

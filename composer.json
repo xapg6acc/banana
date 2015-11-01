@@ -3,6 +3,7 @@
   "description": "Simple database component",
   "homepage": "https://vk.com/id126790791",
   "license": "MIT",
+  "type": "library",
   "support": {
     "issues": "https://github.com/lebran/banana/issues",
     "source": "https://github.com/lebran/banana"
@@ -15,7 +16,12 @@
     }
   ],
   "autoload": {
-    "psr-4": { "Lebran\\Banana\\": "src/" }
+    "psr-4": {
+        "Lebran\\Banana\\": "src/"
+    }
   },
-  "type": "library"
+  "require": {
+    "php": ">=5.5",
+    "lebran/di": "dev-master"
+  }
 }
